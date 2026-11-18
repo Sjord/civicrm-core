@@ -9,6 +9,7 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\OptionGroup;
 use Civi\Api4\OptionValue;
 
 /**
@@ -128,6 +129,76 @@ class CRM_Core_BAO_OptionValueTest extends CiviUnitTestCase {
       ->addWhere('is_default', '=', TRUE)
       ->execute()->indexBy('id');
     return $options;
+  }
+
+  /**
+   * An existing option value cannot be moved to a different option group.
+   */
+  public function testAddOptionValueRejectsValueFromAnotherGroup(): void {
+    $groupOne = OptionGroup::create(FALSE)
+      ->setValues(['name' => 'test_group_keep_' . uniqid(), 'title' => 'Test group keep'])
+      ->execute()->single();
+    $groupTwo = OptionGroup::create(FALSE)
+      ->setValues(['name' => 'test_group_target_' . uniqid(), 'title' => 'Test group target'])
+      ->execute()->single();
+    $optionValue = OptionValue::create(FALSE)
+      ->setValues([
+        'option_group_id' => $groupOne['id'],
+        'label' => 'Original label',
+        'value' => 'original',
+        'weight' => 1,
+      ])
+      ->execute()->single();
+
+    $params = [
+      'label' => 'Updated label',
+      'value' => 'original',
+      'weight' => 1,
+    ];
+    try {
+      CRM_Core_OptionValue::addOptionValue($params, $groupTwo['name'], CRM_Core_Action::UPDATE, $optionValue['id']);
+      $this->fail('An option value from another group should not be updated.');
+    }
+    catch (CRM_Core_Exception $e) {
+      $this->assertStringContainsString('does not belong', $e->getMessage());
+    }
+
+    $savedValue = OptionValue::get(FALSE)
+      ->addWhere('id', '=', $optionValue['id'])
+      ->execute()->single();
+    $this->assertSame($groupOne['id'], $savedValue['option_group_id']);
+    $this->assertSame('Original label', $savedValue['label']);
+  }
+
+  /**
+   * An option value can still be updated within its own option group.
+   */
+  public function testAddOptionValueUpdatesValueInSameGroup(): void {
+    $group = OptionGroup::create(FALSE)
+      ->setValues(['name' => 'test_group_update_' . uniqid(), 'title' => 'Test group update'])
+      ->execute()->single();
+    $optionValue = OptionValue::create(FALSE)
+      ->setValues([
+        'option_group_id' => $group['id'],
+        'label' => 'Original label',
+        'value' => 'original',
+        'weight' => 1,
+      ])
+      ->execute()->single();
+
+    $params = [
+      'label' => 'Updated label',
+      'value' => 'original',
+      'weight' => 2,
+    ];
+    $updatedValue = CRM_Core_OptionValue::addOptionValue($params, $group['name'], CRM_Core_Action::UPDATE, $optionValue['id']);
+    $this->assertSame($optionValue['id'], $updatedValue->id);
+
+    $savedValue = OptionValue::get(FALSE)
+      ->addWhere('id', '=', $optionValue['id'])
+      ->execute()->single();
+    $this->assertSame($group['id'], $savedValue['option_group_id']);
+    $this->assertSame('Updated label', $savedValue['label']);
   }
 
   /**

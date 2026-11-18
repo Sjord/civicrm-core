@@ -181,15 +181,26 @@ class CRM_Core_OptionValue {
     // checking if the group name with the given id or name (in $groupParams) exists
     $groupParams = ['name' => $optionGroupName, 'is_active' => 1];
     $optionGroup = CRM_Core_BAO_OptionGroup::retrieve($groupParams, $defaults);
+    $optionGroupID = $optionGroup->id;
+
+    // An existing option value can only be updated within its own group.
+    if (($action & CRM_Core_Action::UPDATE) && $optionValueID) {
+      $existingGroupID = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_OptionValue',
+        $optionValueID,
+        'option_group_id'
+      );
+      if ($existingGroupID && (int) $existingGroupID !== (int) $optionGroupID) {
+        throw new CRM_Core_Exception(ts('The option value being updated does not belong to the %1 option group.', [1 => $optionGroupName]));
+      }
+    }
 
     // if the corresponding group doesn't exist, create one.
-    if (!$optionGroup->id) {
+    if (!$optionGroupID) {
       $newOptionGroup = CRM_Core_BAO_OptionGroup::writeRecord($groupParams);
       $params['weight'] = 1;
       $optionGroupID = $newOptionGroup->id;
     }
     else {
-      $optionGroupID = $optionGroup->id;
       $oldWeight = NULL;
       if ($optionValueID) {
         $oldWeight = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_OptionValue', $optionValueID, 'weight', 'id');
